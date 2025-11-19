@@ -1,5 +1,5 @@
 <div align="center">
-  <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+  <img width="1200" height="475" alt="NutriBalance Banner" src="https://res.cloudinary.com/dbllcwbp5/image/upload/v1763571936/seedream-4.0_Title_Nutri_Balance_by_Leila_Subtitle_In_collaboration_with_Google_AI_Studio_Des-2_dopi8g.jpg" />
 </div>
 
 # NutriBalance AI – Nutrition & Fitness Coach (Prototype)
@@ -204,3 +204,4 @@ This repository contains everything you need to run the NutriBalance AI prototyp
 
 ```bash
 npm install
+
