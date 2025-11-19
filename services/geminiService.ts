@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, Recipe } from "../types";
+import { AnalysisResult, Recipe, WorkoutAnalysis, DraftExercise } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -55,6 +55,103 @@ const recipeSchema = {
     }
   },
   required: ["title", "description", "ingredients", "instructions", "estimatedCalories", "cookingTime", "macros"]
+};
+
+// Schema for Workout Analysis (FlowSet Blueprint)
+const workoutSchema = {
+  type: Type.OBJECT,
+  properties: {
+    copy_paste_report: { type: Type.STRING, description: "A nicely formatted markdown full report for the user." },
+    structured_summary: {
+      type: Type.OBJECT,
+      properties: {
+        overview: {
+          type: Type.OBJECT,
+          properties: {
+            date: { type: Type.STRING },
+            location: { type: Type.STRING },
+            total_duration_minutes: { type: Type.NUMBER },
+            total_exercises: { type: Type.NUMBER },
+            main_focus: { type: Type.STRING },
+            key_stats: {
+              type: Type.OBJECT,
+              properties: {
+                estimated_total_weight_lifted: { type: Type.NUMBER, nullable: true },
+                total_active_time_minutes: { type: Type.NUMBER, nullable: true }
+              }
+            }
+          },
+          required: ["date", "location", "total_duration_minutes", "total_exercises", "main_focus"]
+        },
+        exercises: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              category: { type: Type.STRING },
+              primary_muscle_group: { type: Type.STRING },
+              sets: { type: Type.NUMBER, nullable: true },
+              reps_per_set: { type: Type.ARRAY, items: { type: Type.NUMBER }, nullable: true },
+              weight_per_set: { type: Type.ARRAY, items: { type: Type.NUMBER }, nullable: true },
+              total_volume: { type: Type.NUMBER, nullable: true },
+              duration_seconds: { type: Type.ARRAY, items: { type: Type.NUMBER }, nullable: true },
+              distance: { type: Type.NUMBER, nullable: true },
+              notes_summary: { type: Type.STRING, nullable: true }
+            },
+            required: ["name", "category", "primary_muscle_group"]
+          }
+        },
+        highlights: { type: Type.ARRAY, items: { type: Type.STRING } },
+        expert_critique: { type: Type.STRING, description: "A critical expert analysis of the session's balance and quality." },
+        notes_to_self: { type: Type.ARRAY, items: { type: Type.STRING } },
+        smart_suggestions: {
+          type: Type.OBJECT,
+          properties: {
+            next_day_focus: {
+              type: Type.OBJECT,
+              properties: {
+                description: { type: Type.STRING },
+                options: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      label: { type: Type.STRING },
+                      details: { type: Type.ARRAY, items: { type: Type.STRING } }
+                    },
+                    required: ["label", "details"]
+                  }
+                }
+              },
+              required: ["description", "options"]
+            },
+            warmup_for_next_session: {
+              type: Type.OBJECT,
+              properties: {
+                description: { type: Type.STRING },
+                steps: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ["description", "steps"]
+            },
+            flexibility_and_mobility_after_today: {
+              type: Type.OBJECT,
+              properties: {
+                description: { type: Type.STRING },
+                lower_body: { type: Type.ARRAY, items: { type: Type.STRING } },
+                upper_body: { type: Type.ARRAY, items: { type: Type.STRING } },
+                estimated_duration_minutes: { type: Type.NUMBER }
+              },
+              required: ["description", "lower_body", "upper_body", "estimated_duration_minutes"]
+            }
+          },
+          required: ["next_day_focus", "warmup_for_next_session", "flexibility_and_mobility_after_today"]
+        }
+      },
+      required: ["overview", "exercises", "highlights", "expert_critique", "notes_to_self", "smart_suggestions"]
+    }
+  },
+  required: ["copy_paste_report", "structured_summary"]
 };
 
 export const analyzeMeal = async (
@@ -136,6 +233,65 @@ export const generateRecipe = async (ingredients: string): Promise<Recipe> => {
 
   } catch (error) {
     console.error("Error generating recipe:", error);
+    throw error;
+  }
+};
+
+export const analyzeWorkout = async (
+  exercises: DraftExercise[]
+): Promise<{ copy_paste_report: string; structured_summary: WorkoutAnalysis }> => {
+  try {
+    const parts: any[] = [];
+
+    // Construct context from multiple exercises
+    let textLog = "Here is the log of my workout session, recorded exercise by exercise:\n";
+    
+    exercises.forEach((ex, index) => {
+      textLog += `\nExercise #${index + 1} (Logged at ${new Date(ex.timestamp).toLocaleTimeString()}): ${ex.text}`;
+      
+      if (ex.image) {
+        const cleanBase64 = ex.image.split(',')[1] || ex.image;
+        parts.push({
+          inlineData: {
+            data: cleanBase64,
+            mimeType: 'image/jpeg'
+          }
+        });
+        textLog += " [Image attached for this exercise]";
+      }
+    });
+
+    textLog += "\n\nPlease analyze this full session.";
+    parts.push({ text: textLog });
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: workoutSchema,
+        systemInstruction: `You are "FlowSet", an expert fitness coach AI. 
+        The user has logged their workout session exercise-by-exercise. 
+
+        Your Job:
+        1. Parse the messy input into a clean, structured session log.
+        2. **CRITICAL:** Provide an "Expert Critique" field. Analyze the balance (push/pull, upper/lower), the volume quality, and intensity. Tell the user strictly but helpfully where they might be overtraining or undertraining, or if their order of exercises was suboptimal.
+        3. Compute stats (Volume, Duration).
+        4. Generate Smart Suggestions for recovery and next workout.
+        
+        Return a JSON object containing a markdown report and structured data.`
+      }
+    });
+
+    const resultText = response.text;
+    if (!resultText) {
+      throw new Error("No response from AI");
+    }
+
+    return JSON.parse(resultText);
+
+  } catch (error) {
+    console.error("Error analyzing workout:", error);
     throw error;
   }
 };
