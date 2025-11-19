@@ -1,0 +1,7 @@
+{
+  "name": "NutriBalance AI",
+  "description": "A smart meal tracker that uses AI to analyze food photos or descriptions, estimate calories, and provide nutritional balancing suggestions.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
